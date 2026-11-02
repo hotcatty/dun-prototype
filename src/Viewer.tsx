@@ -60,25 +60,33 @@ function useLatest<T>(value: T) {
   return ref
 }
 
-function useClock(running: boolean, duration: number, resetKey: string, onEnd: () => void, initial = 0) {
+function useClock(running: boolean, duration: number, resetKey: string, onEnd: () => boolean, initial = 0) {
   const [p, setP] = useState(initial)
   const pRef = useRef(initial)
   const keyRef = useRef(resetKey)
+  const holdRef = useRef(false)
   const onEndRef = useLatest(onEnd)
   useEffect(() => {
     if (keyRef.current === resetKey) return
     keyRef.current = resetKey
+    holdRef.current = false
     pRef.current = 0
     setP(0)
   }, [resetKey])
   useEffect(() => {
     if (!running) return
     const id = window.setInterval(() => {
+      if (holdRef.current) return
       const next = pRef.current + 250 / duration
       if (next >= 1) {
-        pRef.current = 0
-        setP(0)
-        onEndRef.current()
+        if (onEndRef.current()) {
+          holdRef.current = true
+          pRef.current = 1
+          setP(1)
+        } else {
+          pRef.current = 0
+          setP(0)
+        }
       } else {
         pRef.current = next
         setP(next)
@@ -87,6 +95,7 @@ function useClock(running: boolean, duration: number, resetKey: string, onEnd: (
     return () => window.clearInterval(id)
   }, [running, duration, onEndRef])
   const seek = (value: number) => {
+    holdRef.current = false
     pRef.current = value
     setP(value)
   }
@@ -100,9 +109,12 @@ interface ViewerProps {
   framed: boolean
   active: boolean
   still?: ViewerStill
+  scripted?: boolean
+  demoNonce?: number
+  demoCue?: string
 }
 
-export function Viewer({ settings, shared, setShared, framed, active, still }: ViewerProps) {
+export function Viewer({ settings, shared, setShared, framed, active, still, scripted = false, demoNonce = -1, demoCue = '' }: ViewerProps) {
   const videos = useMemo(() => getVideos(settings.someoneDun), [settings.someoneDun])
   const [stack, setStack] = useState<VideoId[]>(still?.stack ?? ['p1'])
   const [navs, setNavs] = useState(0)
@@ -116,6 +128,7 @@ export function Viewer({ settings, shared, setShared, framed, active, still }: V
     p2: [],
   }))
   const [bannerOff, setBannerOff] = useState(false)
+  const [composer, setComposer] = useState(still?.draft ?? '')
   const [toast, showToast] = useToast(still?.toast)
   const screenRef = useRef<HTMLDivElement>(null)
   const size = useSize(screenRef)
@@ -128,7 +141,11 @@ export function Viewer({ settings, shared, setShared, framed, active, still }: V
     DURATION[vid],
     `${vid}:${stack.length}`,
     () => {
-      if (vid === 'p1' && shared.sequel && AUTOPLAY && !sheet) setAutoNext(true)
+      if (vid === 'p1' && shared.sequel && AUTOPLAY && !sheet) {
+        setAutoNext(true)
+        return true
+      }
+      return false
     },
     still?.progress,
   )
@@ -163,12 +180,13 @@ export function Viewer({ settings, shared, setShared, framed, active, still }: V
 
   const lastSequelKey = useRef(shared.sequelKey)
   useEffect(() => {
+    if (scripted) return
     if (shared.sequelKey === lastSequelKey.current) return
     lastSequelKey.current = shared.sequelKey
     if (!shared.sequel || !shared.squatted) return
     const t = window.setTimeout(() => setNotif(true), 1600)
     return () => window.clearTimeout(t)
-  }, [shared.sequelKey, shared.sequel, shared.squatted])
+  }, [scripted, shared.sequelKey, shared.sequel, shared.squatted])
 
   const frozen = still !== undefined
   useEffect(() => {
@@ -179,7 +197,7 @@ export function Viewer({ settings, shared, setShared, framed, active, still }: V
 
   useEffect(() => {
     if (!autoNext || frozen) return
-    const t = window.setTimeout(() => goRef.current('p2'), 3200)
+    const t = window.setTimeout(() => goRef.current('p2'), 3000)
     return () => window.clearTimeout(t)
   }, [autoNext, frozen, goRef])
 
@@ -194,6 +212,87 @@ export function Viewer({ settings, shared, setShared, framed, active, still }: V
     setMine((m) => ({ ...m, [vid]: [c, ...m[vid]] }))
     if (vid === 'p1' && !shared.sequel && !shared.squatted && DUN_RE.test(text)) squat(true)
   }
+
+  const jump = (to: VideoId) => {
+    setSheet(null)
+    setAutoNext(false)
+    setPaused(false)
+    setNotif(false)
+    setDir(to === 'p2' ? 'up' : 'down')
+    setNavs((n) => n + 1)
+    setStack(to === 'p1' ? ['p1'] : ['p1', 'p2'])
+  }
+
+  useEffect(() => {
+    if (!scripted || demoNonce < 0 || !demoCue || demoCue === 'wait') return
+    if (demoCue === 'video' || demoCue === 'close' || demoCue === 'linked') {
+      setSheet(null)
+      setComposer('')
+      setNotif(false)
+      setAutoNext(false)
+      setPaused(false)
+      if (demoCue !== 'close') setStack(['p1'])
+      return
+    }
+    if (demoCue === 'comments') {
+      setNotif(false)
+      setStack(['p1'])
+      setSheet('comments')
+      return
+    }
+    if (demoCue === 'squat-btn' || demoCue === 'reset-squat' || demoCue === 'draft') {
+      setSheet('comments')
+      setStack(['p1'])
+      setComposer(demoCue === 'draft' ? '蹲后续' : '')
+      if (demoCue === 'squat-btn') showToast(SQUAT_TOAST)
+      return
+    }
+    if (demoCue === 'send') {
+      setSheet('comments')
+      setStack(['p1'])
+      setComposer('')
+      setMine({
+        p1: [{ id: 'demo-squat', person: ME, text: '蹲后续', meta: '刚刚 · 浙江', likes: '0' }],
+        p2: [],
+      })
+      showToast(SQUAT_TOAST)
+      return
+    }
+    if (demoCue === 'notif' || demoCue === 'show-notif') {
+      setSheet(null)
+      setStack(['p1'])
+      setPaused(false)
+      setNotif(true)
+      return
+    }
+    if (demoCue === 'open-notif') {
+      jump('p2')
+      return
+    }
+    if (demoCue === 'sequel-comments') {
+      setNotif(false)
+      setStack(['p1', 'p2'])
+      setSheet('comments')
+      return
+    }
+    if (demoCue === 'back') {
+      jump('p1')
+      return
+    }
+    if (demoCue === 'expand') {
+      setNotif(false)
+      setStack(['p1'])
+      setSheet('expand')
+      return
+    }
+    if (demoCue === 'autoplay') {
+      setSheet(null)
+      setNotif(false)
+      setPaused(false)
+      setStack(['p1'])
+      seek(0.993)
+    }
+  }, [scripted, demoNonce, demoCue])
 
   const nextChapter = () => {
     if (!atLast) {
@@ -398,7 +497,7 @@ export function Viewer({ settings, shared, setShared, framed, active, still }: V
         video={v}
         comments={vid === 'p1' ? (settings.someoneDun ? COMMENTS_P1_DUN : COMMENTS_P1_HOT) : commentsP2(settings.someoneDun)}
         mine={mine[vid]}
-        draft={still?.draft}
+        draft={scripted ? composer : (still?.draft ?? '')}
         onClose={() => setSheet(null)}
         onSend={sendComment}
         slot={
@@ -586,6 +685,11 @@ function CommentSheet({
     setComposing(false)
     setText('')
   }, [open])
+
+  useEffect(() => {
+    setText(draft)
+    if (draft) setComposing(true)
+  }, [draft])
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 })

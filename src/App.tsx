@@ -3,6 +3,7 @@ import { Switch } from './Common'
 import { Creator } from './Creator'
 import * as I from './icons'
 import { INITIAL_SHARED, PARAMS, type SetShared, type Settings, type Shared } from './types'
+import { Menu, Play, type Flow } from './Play'
 import { Viewer } from './Viewer'
 
 type Mode = 'dual' | 'single' | 'mobile'
@@ -11,7 +12,7 @@ type Side = 'viewer' | 'creator'
 const PHONE_W = 414
 const PHONE_H = 868
 const GAP = 56
-const TOP_H = 84
+const TOP_H = 118
 
 function measure(): { mode: Mode; scale: number } {
   const w = window.innerWidth
@@ -32,6 +33,13 @@ function measure(): { mode: Mode; scale: number } {
 }
 
 export function App() {
+  const [route, setRoute] = useState<'menu' | 'free' | Flow>('menu')
+  if (route === 'menu') return <Menu onPlay={setRoute} onFree={() => setRoute('free')} />
+  if (route !== 'free') return <Play flow={route} onBack={() => setRoute('menu')} />
+  return <Free onBack={() => setRoute('menu')} />
+}
+
+function Free({ onBack }: { onBack: () => void }) {
   const [{ mode, scale }, setLayout] = useState(measure)
   const [settings, setSettings] = useState<Settings>({
     someoneDun: PARAMS.get('dun') !== '0',
@@ -115,7 +123,7 @@ export function App() {
       <div className="app mobile">
         <Phone hidden={side !== 'viewer'}>{viewer}</Phone>
         <Phone hidden={side !== 'creator'}>{creator}</Phone>
-        <MobileMenu sideSwitch={sideSwitch} toggles={toggles} onReset={reset} />
+        <MobileMenu sideSwitch={sideSwitch} toggles={toggles} onReset={reset} onBack={onBack} />
       </div>
     )
   }
@@ -127,6 +135,9 @@ export function App() {
       <div className="stage-wrap" style={{ width: stageW * scale, height: stageH * scale }}>
         <div className="stage" style={{ width: stageW, height: stageH, transform: `scale(${scale})` }}>
           <div className="controls">
+            <button className="ctl-btn" onClick={onBack}>
+              返回
+            </button>
             {mode === 'single' && sideSwitch}
             <button className="ctl-btn" onClick={reset}>
               <I.Reset size={14} />
@@ -157,7 +168,17 @@ function Phone({ label, hidden = false, children }: { label?: string; hidden?: b
   )
 }
 
-function MobileMenu({ sideSwitch, toggles, onReset }: { sideSwitch: ReactNode; toggles: ReactNode; onReset: () => void }) {
+function MobileMenu({
+  sideSwitch,
+  toggles,
+  onReset,
+  onBack,
+}: {
+  sideSwitch: ReactNode
+  toggles: ReactNode
+  onReset: () => void
+  onBack: () => void
+}) {
   const [open, setOpen] = useState(false)
   return (
     <>
@@ -169,6 +190,9 @@ function MobileMenu({ sideSwitch, toggles, onReset }: { sideSwitch: ReactNode; t
           <div className="m-scrim" onClick={() => setOpen(false)} />
           <div className="m-menu" onClick={(e) => e.target instanceof HTMLButtonElement && e.target.closest('.seg') && setOpen(false)}>
             {sideSwitch}
+            <button className="ctl-btn" onClick={onBack}>
+              返回
+            </button>
             <button
               className="ctl-btn"
               onClick={() => {

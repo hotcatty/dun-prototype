@@ -19,7 +19,9 @@ const ALBUM = [
   { src: IMG.p1, dur: '00:15', flip: true },
 ]
 
-const CAM_TOOLS = ['翻转', '闪光灯', '设置', '麦克风', '倒计时', '美颜']
+const FEED_TABS = ['同城', '关注', '商城', '推荐'] as const
+const CAM_TOP = ['翻转', '闪光灯', '设置', '灵感跟拍']
+const CAM_LOW = ['麦克风', '倒计时', '美颜']
 
 export interface CreatorStill {
   page?: Page
@@ -39,9 +41,12 @@ interface CreatorProps {
   framed: boolean
   onPublished: () => void
   still?: CreatorStill
+  scripted?: boolean
+  demoNonce?: number
+  demoCue?: string
 }
 
-export function Creator({ settings, setShared, framed, onPublished, still }: CreatorProps) {
+export function Creator({ settings, setShared, framed, onPublished, still, scripted = false, demoNonce = -1, demoCue = '' }: CreatorProps) {
   const videos = useMemo(() => getVideos(settings.someoneDun), [settings.someoneDun])
   const [page, setPage] = useState<Page>(still?.page ?? 'home')
   const [picked, setPicked] = useState(0)
@@ -51,6 +56,7 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
   const [stickerOn, setStickerOn] = useState(still?.sticker ?? false)
   const [stickers, setStickers] = useState(still?.stickers ?? false)
   const [comments, setComments] = useState(still?.comments ?? false)
+  const [feedTab, setFeedTab] = useState<(typeof FEED_TABS)[number]>('推荐')
   const [authorBannerOff, setAuthorBannerOff] = useState(false)
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
@@ -117,6 +123,77 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
     timers.current.push(tick)
   }
 
+  const publishedCue = useRef('')
+  useEffect(() => {
+    if (!scripted || demoNonce < 0 || !demoCue) return
+    if (demoCue === 'home') {
+      setPage('home')
+      setComments(false)
+      setPicker(false)
+      setStickers(false)
+      return
+    }
+    if (demoCue === 'comments') {
+      setPage('home')
+      setComments(true)
+      return
+    }
+    if (demoCue === 'create') {
+      openPassive()
+      return
+    }
+    if (demoCue === 'plus') {
+      openActive()
+      return
+    }
+    if (demoCue === 'album') {
+      setComments(false)
+      setPage('album')
+      return
+    }
+    if (demoCue === 'preview') {
+      setPicked(0)
+      setStickers(false)
+      setPage('preview')
+      return
+    }
+    if (demoCue === 'stickers') {
+      setPage('preview')
+      setStickers(true)
+      return
+    }
+    if (demoCue === 'apply') {
+      setStickerOn(true)
+      setStickers(false)
+      setPage('preview')
+      return
+    }
+    if (demoCue === 'edit') {
+      setPicker(false)
+      setStickers(false)
+      setPage('publish')
+      return
+    }
+    if (demoCue === 'quote') {
+      setPage('publish')
+      setQuote(null)
+      setPicker(true)
+      return
+    }
+    if (demoCue === 'pick-quote') {
+      setQuote('p1')
+      setPicker(false)
+      setPage('publish')
+      return
+    }
+    if (demoCue === 'publish') {
+      const token = String(demoNonce)
+      if (publishedCue.current === token) return
+      publishedCue.current = token
+      publish()
+    }
+  }, [scripted, demoNonce, demoCue])
+
   const feed = page === 'posted' ? videos.p2 : videos.p1
   const feedCover = page === 'posted' ? clip.src : videos.p1.cover
 
@@ -162,10 +239,11 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
               <div className="home-top">
                 <I.Menu size={24} />
                 <div className="home-tabs">
-                  <span>同城</span>
-                  <span>关注</span>
-                  <span>商城</span>
-                  <b>推荐</b>
+                  {FEED_TABS.map((name) => (
+                    <button key={name} className={feedTab === name ? 'on' : ''} onClick={() => setFeedTab(name)}>
+                      {name}
+                    </button>
+                  ))}
                 </div>
                 <I.Search size={24} />
               </div>
@@ -186,14 +264,39 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
               onComment={() => page === 'home' && setComments(true)}
             />
             <div className="left">
+              {page === 'home' && (
+                <>
+                  <span className="danmu">弹</span>
+                  <span className="recommend">
+                    <I.Thumb size={14} />
+                    {feed.recommend}
+                    <I.ChevronRight size={13} />
+                  </span>
+                </>
+              )}
               <div className="id-row">
                 <b className="id-name">@{CREATOR.name}</b>
                 <span className="id-date">· {feed.date}</span>
               </div>
-              <div className="cap">
-                <RichText text={page === 'posted' ? feed.short : videos.p1.short} />
+              <div className="cap" onClick={() => page === 'home' && setComments(true)}>
+                <RichText text={feed.short} />
+                {page === 'home' && (
+                  <span className="cap-more">
+                    展开
+                    <I.ChevronDown size={13} />
+                  </span>
+                )}
               </div>
             </div>
+            {page === 'home' && (
+              <button className="related">
+                <I.Search size={15} />
+                <span>
+                  相关搜索 · <em>{feed.related}</em>
+                </span>
+                <I.ChevronRight size={15} />
+              </button>
+            )}
             {page === 'home' && (
               <nav className="tabbar">
                 <b>首页</b>
@@ -270,7 +373,7 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
         <div className="cpage camera">
           <button
             className="cam-x"
-            style={{ top: safeTop + 8 }}
+            style={{ top: safeTop + 16 }}
             onClick={() => {
               setPage('home')
               if (fromComment) setComments(true)
@@ -278,11 +381,18 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
           >
             <I.Close size={22} />
           </button>
-          <div className="cam-music">♪ 选择音乐</div>
-          <div className="cam-tools">
-            {CAM_TOOLS.map((name) => (
+          <div className="cam-music" style={{ top: safeTop + 12 }}>
+            ♪ 选择音乐
+          </div>
+          <div className="cam-tools" style={{ top: safeTop + 24 }}>
+            {CAM_TOP.map((name) => (
               <span key={name}>{name}</span>
             ))}
+            <i />
+            {CAM_LOW.map((name) => (
+              <span key={name}>{name}</span>
+            ))}
+            <span>更多</span>
           </div>
           <div className="cam-modes">
             <span>分段拍</span>
@@ -290,13 +400,25 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
             <b>视频</b>
           </div>
           <div className="cam-shot">
-            <span />
+            <button className="cam-side" type="button">
+              <img src={IMG.rec1} alt="" />
+              特效
+            </button>
             <button className="cam-rec" data-testid="record" onClick={() => useClip(0)} aria-label="拍摄" />
             <button className="cam-album" data-testid="open-album" onClick={() => setPage('album')}>
               <img src={IMG.p2} alt="" />
               相册
             </button>
           </div>
+          <nav className="cam-nav">
+            <span>文字</span>
+            <b>相机</b>
+            <span>模板</span>
+            <span>开直播</span>
+            <button type="button" onClick={() => setPage('album')}>
+              相册
+            </button>
+          </nav>
         </div>
       )}
 
@@ -433,7 +555,26 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
                 <I.At size={14} />
                 朋友
               </span>
+              <span>
+                <I.At size={14} />
+                话题
+              </span>
             </div>
+            <button className="pb-row" type="button">
+              <I.Pin size={21} />
+              <span className="pr-label">选择地点</span>
+              <I.ChevronRight size={16} />
+            </button>
+            <div className="pb-locs">
+              <span>北京市</span>
+              <span>朝阳区</span>
+              <span>查看更多</span>
+            </div>
+            <button className="pb-row" type="button">
+              <I.Hash size={18} />
+              <span className="pr-label">添加标签</span>
+              <I.ChevronRight size={16} />
+            </button>
             <button className="pb-row" onClick={() => setPicker(true)} data-testid="quote-row">
               <I.LinkIc size={21} />
               <span className="pr-label">引用我的作品</span>
@@ -454,19 +595,31 @@ export function Creator({ settings, setShared, framed, onPublished, still }: Cre
                 <I.ChevronRight size={16} />
               )}
             </button>
-            <button className="pb-row">
-              <I.Pin size={21} />
-              <span className="pr-label">选择地点</span>
-              <I.ChevronRight size={16} />
-            </button>
-            <button className="pb-row">
+            <button className="pb-row" type="button">
               <I.Globe size={21} />
               <span className="pr-label">公开 · 所有人可见</span>
               <I.ChevronRight size={16} />
             </button>
+            <button className="pb-row" type="button">
+              <I.Star size={20} />
+              <span className="pr-label">DOU+上热门</span>
+              <I.ChevronRight size={16} />
+            </button>
+            <button className="pb-row" type="button">
+              <I.Gear size={20} />
+              <span className="pr-label">高级设置</span>
+              <I.ChevronRight size={16} />
+            </button>
+            <p className="pb-save">编辑封面，作品将保存到草稿</p>
           </div>
           <div className="pb-bottom">
-            <button className="gray-btn">限时日常</button>
+            <button className="pb-share" type="button">
+              <I.Share size={20} />
+              分享
+            </button>
+            <button className="gray-btn" type="button" onClick={publish} data-testid="publish-daily">
+              限时日常
+            </button>
             <button className="red-btn" onClick={publish} data-testid="publish">
               发作品
             </button>

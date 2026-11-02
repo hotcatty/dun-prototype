@@ -164,7 +164,8 @@ export function RightRail({
       </button>
       <div className="rail-disc-wrap">
         <div className="rail-disc">
-          <Avatar person={person} size={26} />
+          <Avatar person={person} size={44} />
+          <i />
         </div>
         <span className="rail-same">拍同款</span>
       </div>
